@@ -192,3 +192,12 @@ def plain_text(value: str) -> str:
     parser = _TextParser()
     parser.feed(value)
     return "\n".join(line.strip() for line in "".join(parser.parts).splitlines() if line.strip())
+
+
+class SessionUser(APIModel):
+    id: int
+    username: str
+
+
+class CurrentSession(APIModel):
+    current_user: SessionUser | None

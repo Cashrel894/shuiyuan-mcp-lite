@@ -150,6 +150,20 @@ def create_server(config: Config | None = None, *, client: ShuiyuanClient | None
 
 
 def main() -> None:
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "auth":
+            from .auth import main as auth_main
+
+            auth_main(sys.argv[2:])
+            return
+        if sys.argv[1] in {"-h", "--help"}:
+            print(
+                "用法：shuiyuan-mcp [auth {login,import,status,logout}]\n"
+                "无参数启动 stdio MCP Server。"
+            )
+            return
+        print("未知命令；运行 shuiyuan-mcp --help 查看用法。", file=sys.stderr)
+        raise SystemExit(2)
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     # HTTP request URLs may include search text; do not log them at INFO.
     logging.getLogger("httpx").setLevel(logging.WARNING)

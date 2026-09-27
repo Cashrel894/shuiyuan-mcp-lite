@@ -1,8 +1,11 @@
-"""Environment-only configuration. Never include credentials in representations."""
+"""Environment configuration and login file location; credentials stay out of repr."""
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import urlsplit
+
+from .credentials import default_cookie_file
 
 
 @dataclass(frozen=True)
@@ -10,6 +13,8 @@ class Config:
     base_url: str = "https://shuiyuan.sjtu.edu.cn"
     user_api_key: str = field(default="", repr=False)
     user_api_client_id: str = field(default="", repr=False)
+
+    cookie_file: Path = field(default_factory=default_cookie_file)
 
     def __post_init__(self) -> None:
         try:
@@ -42,4 +47,7 @@ class Config:
             base_url=os.environ.get("SHUIYUAN_BASE_URL", "https://shuiyuan.sjtu.edu.cn"),
             user_api_key=os.environ.get("SHUIYUAN_USER_API_KEY", ""),
             user_api_client_id=os.environ.get("SHUIYUAN_USER_API_CLIENT_ID", ""),
+            cookie_file=Path(os.environ["SHUIYUAN_COOKIE_FILE"]).expanduser()
+            if os.environ.get("SHUIYUAN_COOKIE_FILE")
+            else default_cookie_file(),
         )

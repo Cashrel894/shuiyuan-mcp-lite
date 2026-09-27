@@ -301,7 +301,6 @@ async def test_html_response_and_login_redirect(client_factory):
 @pytest.mark.parametrize(
     "config",
     [
-        Config(base_url="https://shuiyuan.invalid"),
         Config(
             base_url="https://shuiyuan.invalid/forum/",
             user_api_key="secret",

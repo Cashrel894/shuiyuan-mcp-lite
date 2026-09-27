@@ -26,7 +26,7 @@ async def client_factory():
 
     def create(handler, config=None):
         client = ShuiyuanClient(
-            config or Config(base_url="https://shuiyuan.invalid"),
+            config or Config(base_url="https://shuiyuan.invalid", user_api_key="test-key"),
             transport=httpx.MockTransport(handler),
         )
         clients.append(client)

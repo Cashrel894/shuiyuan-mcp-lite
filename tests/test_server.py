@@ -128,6 +128,7 @@ async def test_uv_stdio_startup(tmp_path):
             "SHUIYUAN_BASE_URL": "https://shuiyuan.invalid",
             "SHUIYUAN_USER_API_KEY": "",
             "SHUIYUAN_USER_API_CLIENT_ID": "",
+            "SHUIYUAN_COOKIE_FILE": str(tmp_path / "missing-cookies.json"),
         },
     )
     with (tmp_path / "stderr.log").open("w+") as stderr:
@@ -144,5 +145,8 @@ async def test_uv_stdio_startup(tmp_path):
                     } == RESOURCE_URIS
                     result = await session.call_tool("read_post", {"post_id": -1})
                     assert result.isError
+                    missing_auth = await session.call_tool("read_post", {"post_id": 101})
+                    assert missing_auth.isError
+                    assert "auth login" in missing_auth.content[0].text
         stderr.seek(0)
         assert "Failed to parse JSONRPC" not in stderr.read()

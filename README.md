@@ -11,23 +11,52 @@ uv sync
 uv run shuiyuan-mcp
 ```
 
+首次使用先运行 `uv run shuiyuan-mcp auth login` 完成鉴权配置。
+
 启动后等待 Host 通过 stdin 发送 MCP 消息，无交互提示，也不会主动请求水源。stdout 仅用于 MCP 协议；日志写入 stderr。直接在终端运行时没有输出属于正常情况。Host 关闭输入后进程退出。
 
 依赖版本记录在 `uv.lock`。部署可执行 `uv sync --locked --no-dev`；安装后的 CLI 名称为 `shuiyuan-mcp`。当前锁定官方 SDK 的 1.x 维护版本（`mcp>=1.26,<2`），不依赖独立的 `fastmcp` 包。
 
 ## 配置
 
-所有配置来自进程环境变量，不自动加载 `.env` 文件。
+服务配置来自环境变量；Cookie 凭据存储在登录文件中，不自动加载 `.env` 文件。水源帖子需要登录权限，未配置有效凭据时工具会提示先登录，不再尝试匿名读取。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SHUIYUAN_BASE_URL` | `https://shuiyuan.sjtu.edu.cn` | 水源部署的 HTTP(S) 地址，不可含用户名、密码、查询参数或 fragment |
-| `SHUIYUAN_USER_API_KEY` | 空 | 用户自行获取的 Discourse User API Key；留空时匿名访问 |
+| `SHUIYUAN_USER_API_KEY` | 空 | 可选 Discourse User API Key；配置后优先于 Cookie 文件 |
 | `SHUIYUAN_USER_API_CLIENT_ID` | 空 | 可选客户端 ID，仅配置 key 时发送 |
+| `SHUIYUAN_COOKIE_FILE` | `~/.config/shuiyuan-mcp-lite/cookies.json`（Linux） | 用户提供的水源登录文件；支持 XDG_CONFIG_HOME，Windows 使用 APPDATA |
 
-配置 key 后通过 `User-Api-Key` 请求头鉴权，配置 client ID 后同时发送 `User-Api-Client-Id`。请使用具有所需读取权限的 key；内容可见性仍受站点权限控制。匿名访问失败时会返回明确错误，不会自动登录。
+配置 key 后通过 `User-Api-Key` 请求头鉴权，配置 client ID 后同时发送 `User-Api-Client-Id`。请使用具有所需读取权限的 key；内容可见性仍受站点权限控制。登录失效时会提示重新登录，不会自动操作 jAccount。
 
-本项目不提供浏览器授权流程，不保存 jAccount 密码、不读取浏览器 Cookie、不硬编码或记录完整凭据。
+本项目不保存 jAccount 密码、不自动读取浏览器 Cookie、不硬编码或记录完整凭据。
+
+### 首次登录（推荐，容器也可用）
+
+```bash
+uv run shuiyuan-mcp auth login
+uv run shuiyuan-mcp auth status
+```
+
+登录命令提供中文步骤：在自己的浏览器手动登录水源，按 F12 打开开发者工具，在 Application（应用）或 Storage（存储）的 Cookies 下选择水源域名，复制 `_t` 的 Value，粘贴到终端。还可输入 `_forum_session`（可选）。输入不回显，也不放入命令行参数；不要将 Cookie 发给聊天机器人。
+
+命令通过 `GET /session/current.json` 验证身份，成功后才保存登录文件；失败不会覆盖旧文件。文件使用原子替换，POSIX 权限为 0600。Cookie 文件是明文凭据，请仅保存在自己的持久化目录。登录过期后再次运行同一命令。
+
+### 导入已有登录文件
+
+兼容 `dajiaohuang/shuiyuan-mcp` 的 `cookies.json`（`{site, cookies}`）以及用户主动导出的 Playwright storage state（`{cookies, origins}`）：
+
+```bash
+uv run shuiyuan-mcp auth import /path/to/exported-cookies.json
+uv run shuiyuan-mcp auth status
+uv run shuiyuan-mcp auth logout
+```
+
+只保存当前水源域名、适用路径、尚未过期的 Cookie，丢弃 jAccount、父域 SSO 和 localStorage 数据。Cookie 鉴权只支持 HTTPS。`logout` 仅删除本地文件，不会注销浏览器或撤销服务器会话；若配置了 User API Key，还需清空相应环境变量。
+
+所有鉴权子命令支持 `--cookie-file /absolute/path/cookies.json`，优先于环境变量；服务端仍需用 `SHUIYUAN_COOKIE_FILE` 指向同一位置。文件更新或删除将在下一次请求生效。未登录也能启动 MCP、列出工具，但读取内容会返回明确的登录提示。凭据不通过 MCP 工具输入或返回。
+
 
 ## MCP Tools
 
@@ -96,7 +125,7 @@ uv run shuiyuan-mcp
 }
 ```
 
-将目录替换为实际绝对路径。AstrBot 进程需要能在 PATH 中找到 uv，否则将 `command` 改成 uv 的绝对路径。需要鉴权时，通过 Host 的环境变量配置向子进程传入上述 key 和 client ID。其他支持 stdio 的 MCP Host 可复用相同 command/args。
+将目录替换为实际绝对路径。AstrBot 进程需要能在 PATH 中找到 uv，否则将 `command` 改成 uv 的绝对路径。通过 Host 的环境变量配置向子进程传入登录文件路径，或可选的 key 和 client ID。其他支持 stdio 的 MCP Host 可复用相同 command/args。
 
 ### Docker 容器内克隆
 
@@ -111,12 +140,25 @@ uv sync --locked --no-dev
 
 也可以从宿主机先用 `docker exec -it <容器名> sh` 进入容器，再执行上述命令。确认 `/AstrBot/data` 对应实际的持久化挂载目录，且 AstrBot 运行用户对项目目录有读写权限。
 
-安装后可直接使用虚拟环境中的入口，避免依赖 AstrBot 进程的 uv PATH：
+在容器交互终端中完成登录，保存到持久化目录：
+
+```bash
+export SHUIYUAN_COOKIE_FILE=/AstrBot/data/shuiyuan-auth/cookies.json
+.venv/bin/shuiyuan-mcp auth login
+.venv/bin/shuiyuan-mcp auth status
+```
+
+没有交互终端时，可将自己导出的 Cookie 文件复制到容器，再执行 `auth import /path/to/exported-cookies.json`。不要把凭据提交到仓库。
+
+安装后直接使用虚拟环境中的入口，并明确配置登录文件：
 
 ```json
 {
   "command": "/AstrBot/data/mcp/shuiyuan-mcp-lite/.venv/bin/shuiyuan-mcp",
-  "args": []
+  "args": [],
+  "env": {
+    "SHUIYUAN_COOKIE_FILE": "/AstrBot/data/shuiyuan-auth/cookies.json"
+  }
 }
 ```
 
@@ -145,6 +187,7 @@ uv run pytest
 - `src/shuiyuan_mcp/client.py`：异步 HTTP、分页、结果精简和错误映射。
 - `src/shuiyuan_mcp/models.py`：上游响应校验、API HTML 的纯文本转换。
 - `src/shuiyuan_mcp/config.py`：环境变量配置。
+- `src/shuiyuan_mcp/auth.py`、`credentials.py`：交互鉴权、在线检查、登录文件导入和保存。
 - `tests/`：mock 和协议测试。
 
 开发遵循 [AGENTS.md](AGENTS.md) 中的 YAGNI 和 Conventional Commits 约定，范围见 [MVP 文档](docs/shuiyuan-mcp-mvp.md)。
@@ -153,7 +196,7 @@ uv run pytest
 
 - 自动测试没有使用真实水源账号；线上访问能力取决于站点版本、权限、限流和网络条件。
 - 只提供 stdio 和读取能力，不实现写操作、Chat、admin API、批量爬取、Web UI 或部署编排。
-- 不自动获取或刷新 User API Key。
+- 不自动获取或刷新 User API Key；Cookie 失效时需要用户重新提供。
 - 搜索摘要是上游摘要，可能已被上游截断；完整内容请用 `read_post`。主题读取期间若帖子被删除或可见性变化，可能返回响应不一致错误，重新读取即可。
 - cooked HTML 的纯文本回退不保留完整排版；没有 raw 的单帖响应会报告异常，不把 HTML 冒充 Markdown。
 - 插件元数据和资源的固定上限不支持继续翻页；输出会标明截断。

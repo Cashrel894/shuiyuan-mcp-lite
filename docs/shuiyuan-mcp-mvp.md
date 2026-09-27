@@ -1,3 +1,5 @@
+> 后续需求更新：水源读取需要登录权限；现支持用户主动粘贴或导入 Cookie 登录文件，并在线验证。原 MVP 的匿名访问和仅环境变量凭据要求已由该需求扩展；不自动读取浏览器 Cookie、不自动登录 jAccount，MCP 保持只读。
+
 请在当前仓库中实现一个面向上海交通大学水源社区（https://shuiyuan.sjtu.edu.cn）的标准 MCP Server。
 
 目标是做一个“小、清晰、稳定、默认只读、可直接接入 AstrBot / Codex / Claude 等 MCP Host”的 MVP。

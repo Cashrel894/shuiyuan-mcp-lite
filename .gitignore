@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local Shuiyuan login credentials
+cookies.json
+*storage-state*.json
+.shuiyuan-auth-*

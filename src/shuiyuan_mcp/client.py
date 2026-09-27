@@ -10,8 +10,10 @@ import httpx
 from pydantic import ValidationError
 
 from .config import Config
+from .credentials import LOGIN_HELP, AuthError, Cookie, cookie_header, load_cookies
 from .models import (
     APIModel,
+    CurrentSession,
     Post,
     SearchResponse,
     Site,
@@ -102,8 +104,16 @@ def build_search_query(
 
 
 class ShuiyuanClient:
-    def __init__(self, config: Config, *, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self,
+        config: Config,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        cookies: list[Cookie] | None = None,
+    ):
         self.base_url = config.base_url
+        self._config = config
+        self._cookies = cookies
         headers = {"Accept": "application/json", "User-Agent": "shuiyuan-mcp-lite/0.1.0"}
         if config.user_api_key:
             headers["User-Api-Key"] = config.user_api_key
@@ -124,8 +134,19 @@ class ShuiyuanClient:
 
     async def _get[T: APIModel](self, path: str, model: type[T], params=None) -> T:
         async with self._semaphore:
+            headers = {}
+            if not self._config.user_api_key:
+                try:
+                    cookies = self._cookies
+                    if cookies is None:
+                        cookies = await asyncio.to_thread(
+                            load_cookies, self._config.cookie_file, self.base_url
+                        )
+                    headers["Cookie"] = cookie_header(cookies)
+                except AuthError as exc:
+                    raise ShuiyuanError("Authentication Required", str(exc)) from None
             try:
-                response = await self._http.get(path.lstrip("/"), params=params)
+                response = await self._http.get(path.lstrip("/"), params=params, headers=headers)
             except httpx.TimeoutException:
                 raise ShuiyuanError(
                     "Timeout", "Shuiyuan request timed out; try again later"
@@ -133,8 +154,11 @@ class ShuiyuanClient:
             except httpx.RequestError:
                 raise ShuiyuanError("Shuiyuan Unreachable", "could not reach Shuiyuan") from None
         codes = {
-            401: ("Authentication Required", "provide a valid SHUIYUAN_USER_API_KEY"),
-            403: ("Permission Denied", "the current user cannot access this content"),
+            401: ("Authentication Required", "登录已失效或尚未登录。" + LOGIN_HELP),
+            403: (
+                "Permission Denied",
+                "当前登录态无权访问；可运行 shuiyuan-mcp auth status 检查登录是否过期。",
+            ),
             404: ("Not Found", "requested content was not found"),
             429: ("Rate Limited", "Shuiyuan rate limit reached; wait before retrying"),
         }
@@ -145,7 +169,7 @@ class ShuiyuanClient:
         if 300 <= response.status_code < 400:
             location = response.headers.get("location", "")
             if "/login" in location or "jaccount" in location.lower():
-                raise ShuiyuanError("Authentication Required", "Shuiyuan redirected to login")
+                raise ShuiyuanError("Authentication Required", "水源要求重新登录。" + LOGIN_HELP)
         if response.status_code != 200:
             raise ShuiyuanError("Unexpected API Response", f"HTTP {response.status_code}")
         try:
@@ -154,6 +178,16 @@ class ShuiyuanClient:
             raise ShuiyuanError(
                 "Unexpected API Response", "invalid JSON or unexpected response schema"
             ) from None
+
+    async def auth_status(self) -> dict:
+        session = await self._get("/session/current.json", CurrentSession)
+        if session.current_user is None:
+            raise ShuiyuanError("Authentication Required", "登录已失效。" + LOGIN_HELP)
+        return {
+            "authenticated": True,
+            "username": session.current_user.username,
+            "method": "user_api_key" if self._config.user_api_key else "cookie",
+        }
 
     def _post_url(self, topic_id: int, post_number: int) -> str:
         return f"{self.base_url}/t/{topic_id}/{post_number}"
